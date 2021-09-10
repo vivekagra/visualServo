@@ -1,6 +1,7 @@
 import sys
 import time
 import numpy as np
+from math import copysign
 
 import roslib
 import rospy
@@ -32,9 +33,92 @@ class PBVS():
     z_change = 1
 
     def __init__(self):
-        rospy.init_node('PBVS')
-        rospy.Subscriber('ObjectRecognition', PoseArray, self.getObjPos)
+        rospy.init_node('Visual Servoing')
+        rospy.on_shutdown(self.shutdown)
         vel_pub = rospy.Publisher('cmd_vel', Twist)
+
+        # The maximum distance a target can be from the robot for us to track
+        self.max_z = rospy.get_param("~max_z", 20.0)
+        
+        # The goal distance (in meters) to keep between the robot and the marker
+        self.goal_z = rospy.get_param("~goal_z", 0.6)
+        
+        # How far away from the goal distance (in meters) before the robot reacts
+        self.z_threshold = rospy.get_param("~z_threshold", 0.05)
+        
+        # How far away from being centered (x displacement) of the object before the robot reacts (units are meters)
+        self.x_threshold = rospy.get_param("~x_threshold", 0.05)
+        
+        # How much do we weight the goal distance (z) when making a movement
+        self.z_scale = rospy.get_param("~z_scale", 0.5)
+
+        # How much do we weight x-displacement when making a movement        
+        self.x_scale = rospy.get_param("~x_scale", 1.0)
+
+        # The maximum rotation speed in radians per second
+        self.max_angular_speed = rospy.get_param("~max_angular_speed", 2.0)
+        
+        # The minimum rotation speed in radians per second
+        self.min_angular_speed = rospy.get_param("~min_angular_speed", 0.5)
+
+        # The max linear speed in meters per second
+        self.max_linear_speed = rospy.get_param("~max_linear_speed", 0.3)
+        
+        # The minimum linear speed in meters per second
+        self.min_linear_speed = rospy.get_param("~min_linear_speed", 0.1)
+
+        # The goal distance (in meters) to keep between the robot and the marker
+        self.goal_x = rospy.get_param("~goal_x", 0.6)
+
+        # Set flag to indicate when the AR marker is visible
+        self.target_visible = False
+
+         # Wait for the ObjectRecognition topic to become available
+        rospy.loginfo("Waiting for ar_pose_marker topic...")
+        rospy.wait_for_message('ObjectRecognition', PoseArray)
+        rospy.Subscriber('ObjectRecognition', PoseArray, self.set_cmd_vel)
+
+        rospy.loginfo("Object detected. Starting follower...")
+        self.update()
+
+    def set_cmd_vel(self,pos):
+        try:
+            if not self.target_visible:
+                rospy.loginfo("FOLLOWER is Tracking Target!")
+            self.target_visible = True
+        except:
+            # If target is lost, stop the robot by slowing it incrementally
+            self.move_cmd.linear.x /= 1.5
+            self.move_cmd.angular.z /= 1.5
+            
+            if self.target_visible:
+                rospy.loginfo("FOLLOWER LOST Target!")
+            self.target_visible = False
+            
+            return
+        
+        # pose with resepect to robot frame
+        current_pose = pos.pose.position
+        current_x = current_pose.x 
+        current_y = current_pose.y
+        current_z = current_pose.z
+
+        # Rotate the robot only if the displacement of the target exceeds the threshold
+        if abs(current_x) > self.x_threshold:
+            # Set the rotation speed proportional to the displacement of the target
+            speed = current_x * self.x_scale
+            self.move_cmd.angular.z = copysign(max(self.min_angular_speed, min(self.max_angular_speed, abs(speed))), speed)
+        else:
+            self.move_cmd.angular.z = 0.0
+ 
+        # Now get the linear speed
+        if abs(current_z - self.goal_z) > self.z_threshold:
+            speed = (current_z - self.goal_z) * self.x_scale
+            if speed < 0:
+                speed *= 1.5
+            self.move_cmd.linear.x = copysign(min(self.max_linear_speed, max(self.min_linear_speed, abs(speed))), speed)
+        else:
+            self.move_cmd.linear.x = 0.0
 
     def getObjPos(self, pos):
         des_pos = pos.pose.position
@@ -43,15 +127,21 @@ class PBVS():
         curr_pos = pos.pose.position
 
     def update(self):
-        pass
-
-    def spin(self):
-        rospy.loginfo("Initialising Visual Servo")
-        
         while not rospy.is_shutdown():
-            self.update()
-        rospy.spin()
+            # Send the Twist command to the robot
+            self.vel_pub.publish(self.move_cmd)
+            
+            # Sleep for 1/self.rate seconds
+            r.sleep()8
+    
+    def shutdown(self):
+        rospy.loginfo("Stopping the Visual Servoing...")
+        self.vel_pub.publish(Twist())
+        rospy.sleep(1) 
 
 if __name__=='__main__':
-    pbvs = PBVS()
-    pbvs.spin()
+    try:
+        pbvs = PBVS()
+        rospy.spin()
+    except rospy.ROSInterruptException:
+        rospy.loginfo("Terminating Visual Servo")
