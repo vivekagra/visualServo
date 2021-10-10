@@ -10,7 +10,7 @@ from std_msgs.msg import String, Int8, Header
 from geometry_msgs.msg import Twist, PoseStamped, Point, Quaternion, TransformStamped, PoseArray
 from sensor_msgs.msg import CameraInfo, RegionOfInterest
 
-class PBVS():
+class visualServo():
     curr_pose = Point()
     des_pose = Point()
 
@@ -35,7 +35,7 @@ class PBVS():
     def __init__(self):
         rospy.init_node('Visual_Servoing')
         rospy.on_shutdown(self.shutdown)
-        self.vel_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
+        self.vel_pub = rospy.Publisher('cmd_vel', Twist, queue_size=2)
         self.move_cmd = Twist()
 
         # The maximum distance a target can be from the robot for us to track
@@ -51,7 +51,7 @@ class PBVS():
         # How far away from the goal distance (in meters) before the robot reacts
         self.z_threshold = rospy.get_param("~z_threshold", 0.5)
         # How far away from being centered (x displacement) of the object before the robot reacts (units are meters)
-        self.x_threshold = rospy.get_param("~x_threshold", 100)
+        self.x_threshold = rospy.get_param("~x_threshold", 130)
         
 
         # How much do we weight the goal distance (z) when making a movement
@@ -61,15 +61,15 @@ class PBVS():
 
 
         # The maximum rotation speed in radians per second
-        self.max_angular_speed = rospy.get_param("~max_angular_speed", 0.8)
+        self.max_angular_speed = rospy.get_param("~max_angular_speed", 0.2)
         # The minimum rotation speed in radians per second
-        self.min_angular_speed = rospy.get_param("~min_angular_speed", 0.5)
+        self.min_angular_speed = rospy.get_param("~min_angular_speed", 0.0)
 
 
         # The max linear speed in meters per second
-        self.max_linear_speed = rospy.get_param("~max_linear_speed", 0.3)
+        self.max_linear_speed = rospy.get_param("~max_linear_speed", 0.5)
         # The minimum linear speed in meters per second
-        self.min_linear_speed = rospy.get_param("~min_linear_speed", 0.1)
+        self.min_linear_speed = rospy.get_param("~min_linear_speed", 0.0)
 
 
         # Set flag to indicate when the AR marker is visible
@@ -108,7 +108,7 @@ class PBVS():
         # Rotate the robot only if the displacement of the target exceeds the threshold
         if abs(current_x-self.goal_x) > self.x_threshold:
             # Set the rotation speed proportional to the displacement of the target
-            speed = (current_x-self.goal_x) * self.x_scale
+            speed = -(current_x-self.goal_x) * self.x_scale
             self.move_cmd.angular.z = copysign(max(self.min_angular_speed, min(self.max_angular_speed, abs(speed))), speed)
         else:
             self.move_cmd.angular.z = 0.0
@@ -129,12 +129,14 @@ class PBVS():
         curr_pos = pos.pose.position
 
     def update(self):
+        rate = rospy.Rate(2)
         while not rospy.is_shutdown():
             # Send the Twist command to the robot
             self.vel_pub.publish(self.move_cmd)
             
             # Sleep for 1/self.rate seconds
-            # rospy.sleep()
+            rate.sleep()
+        rospy.spin()
     
     def shutdown(self):
         rospy.loginfo("Stopping the Visual Servoing...")
@@ -143,7 +145,7 @@ class PBVS():
 
 if __name__=='__main__':
     try:
-        pbvs = PBVS()
-        rospy.spin()
+        vs = visualServo()
+        # rospy.spin()
     except rospy.ROSInterruptException:
         rospy.loginfo("Terminating Visual Servo")
