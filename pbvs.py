@@ -22,16 +22,24 @@ class PBVS():
         self.angular_dot = np.zeros((3,1), dtype=np.float32) # 3x1 angular velocity vector
         self.linear_dot = np.zeros((3,1), dtype=np.float32) # 3x1 linear velocity vector
 
-        self.des_pos = Point()
-        self.cur_pos = Point()
+        self.des_pos = Twist()
+        self.cur_pos = Twist()
         self.update_velocity()
         self.update()
 
+    def updatePos(self):
+        robot_pos = Twist()
+
     def getCameraVelocity(self):
-        error = np.zeros((3,1), dtype=np.float32)
-        error[0] = self.cur_pos.x - self.des_pos.x
-        error[1] = self.cur_pos.y - self.des_pos.y
-        error[2] = self.cur_pos.z - self.des_pos.z
+        self.updatePos()
+        error = np.zeros((6,1), dtype=np.float32)
+        error[0] = self.cur_pos.linear.x - self.des_pos.linear.x
+        error[1] = self.cur_pos.linear.y - self.des_pos.linear.y
+        error[2] = self.cur_pos.linear.z - self.des_pos.linear.z
+        error[3] = self.cur_pos.angular.x - self.des_pos.angular.x
+        error[4] = self.cur_pos.angular.y - self.des_pos.angular.y
+        error[5] = self.cur_pos.angular.z - self.des_pos.angular.z
+        
         print("Error:", error.T)
         velocity_camera_camera_frame = np.zeros((6,1), dtype = np.float32)
         return velocity_camera_camera_frame
